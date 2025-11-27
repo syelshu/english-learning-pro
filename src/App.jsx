@@ -33,9 +33,6 @@ import {
   StickyNote
 } from 'lucide-react';
 
-// --- API Configuration & Helper ---
-const apiKey = import.meta.env.VITE_OPENAI_API_KEY || ""; // System will inject the key at runtime
-
 // --- STRICT COLOR PALETTE ---
 const COLORS = {
   midnightGreen: '#03444A',    // Text, Dark Borders, Dark Background, Tab Text
@@ -71,12 +68,27 @@ const cleanJson = (text) => {
   }
 };
 
-const callGemini = async (prompt, systemInstruction = "", useJsonMode = false) => {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+// --- 替换为：OpenAI API 调用函数 ---
+const callOpenAI = async (prompt, systemInstruction = "", useJsonMode = false) => {
+  // 1. 获取 OpenAI Key
+  const apiKey = localStorage.getItem('user_openai_key'); // 注意：这里名字改成了 user_openai_key
+  
+  if (!apiKey) {
+    alert("请先点击右上角设置您的 OpenAI API Key");
+    throw new Error("No API Key provided");
+  }
+
+  const url = "https://api.openai.com/v1/chat/completions";
+  
+  // 2. 构建 OpenAI 请求体
   const payload = {
-    contents: [{ parts: [{ text: prompt }] }],
-    systemInstruction: { parts: [{ text: systemInstruction }] },
-    generationConfig: useJsonMode ? { responseMimeType: "application/json" } : undefined
+    model: "gpt-4o", // 如果未来出了 GPT-5，把这里改成 "gpt-5" 即可
+    messages: [
+      { role: "system", content: systemInstruction },
+      { role: "user", content: prompt }
+    ],
+    // OpenAI 的 JSON 模式写法
+    response_format: useJsonMode ? { type: "json_object" } : undefined
   };
 
   let attempt = 0;
@@ -86,13 +98,24 @@ const callGemini = async (prompt, systemInstruction = "", useJsonMode = false) =
     try {
       const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}` // OpenAI 要求把 Key 放在这里
+        },
         body: JSON.stringify(payload)
       });
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(`OpenAI Error: ${errData.error?.message || response.status}`);
+      }
+      
       const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      // OpenAI 的返回路径不同
+      return data.choices?.[0]?.message?.content || "";
+      
     } catch (error) {
+      console.error("API Call Failed:", error);
       if (attempt === delays.length) throw error;
       await new Promise(resolve => setTimeout(resolve, delays[attempt]));
       attempt++;
@@ -119,6 +142,52 @@ const RenderText = ({ text, className = "" }) => {
 };
 
 // --- Components ---
+
+// --- 修改：API Key 设置弹窗 ---
+const ApiKeyModal = ({ isOpen, onClose, onSave }) => {
+  const [inputKey, setInputKey] = useState('');
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl animate-fade-in">
+        <h3 className="text-xl font-bold mb-2" style={{ color: COLORS.midnightGreen, fontFamily: FONT_CN }}>
+          设置 OpenAI API Key
+        </h3>
+        <p className="text-sm mb-4 opacity-80" style={{ color: COLORS.midnightGreen }}>
+          本项目将使用 OpenAI (GPT-4o) 模型。Key 仅存储在本地，不上传服务器。
+          <br/><span className="text-red-500 font-bold">注意：OpenAI API 需要账户有余额才能使用。</span>
+        </p>
+        <input 
+          type="password" 
+          value={inputKey}
+          onChange={(e) => setInputKey(e.target.value)}
+          placeholder="sk-proj-..."
+          className="w-full p-3 border rounded-lg mb-4 focus:outline-none focus:border-[#00A8A8]"
+          style={{ fontFamily: 'monospace' }}
+        />
+        <div className="flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-sm hover:bg-gray-100 transition-colors">取消</button>
+          <button 
+            onClick={() => {
+              if(inputKey.trim()) onSave(inputKey.trim());
+            }}
+            className="px-4 py-2 rounded-lg text-white text-sm font-bold shadow-md hover:shadow-lg transition-all"
+            style={{ backgroundColor: COLORS.lightSeaGreen }}
+          >
+            保存并开始
+          </button>
+        </div>
+        <div className="mt-4 text-xs text-center">
+          <a href="https://platform.openai.com/api-keys" target="_blank" className="underline hover:text-[#00A8A8]" style={{ color: `${COLORS.midnightGreen}80` }}>
+            获取 OpenAI API Key
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const ImportView = ({ onStart }) => {
   const [text, setText] = useState('');
@@ -185,7 +254,7 @@ const AIChatModal = ({ isOpen, onClose, contextArticle }) => {
     try {
       const articleContext = contextArticle ? `Context:\n${contextArticle.substring(0, 5000)}...\n\n` : "";
       const prompt = `${articleContext}History:\n${messages.slice(-6).map(m => `${m.role}: ${m.text}`).join('\n')}\nUser: ${userMsg}\nAI:`;
-      const response = await callGemini(prompt, "Helpful tutor.");
+      const response = await callOpenAI(prompt, "Helpful tutor.");
       setMessages(prev => [...prev, { role: 'ai', text: response }]);
     } catch (e) {
       setMessages(prev => [...prev, { role: 'ai', text: "Error, try again." }]);
@@ -549,6 +618,27 @@ const App = () => {
   const [expandedMeanings, setExpandedMeanings] = useState({}); 
   const [analysisCache, setAnalysisCache] = useState({});
   const readingAreaRef = useRef(null);
+  // ====== 1. OpenAI Key 逻辑开始 ======
+  
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const [hasKey, setHasKey] = useState(!!localStorage.getItem('user_openai_key'));
+
+  // 自动检查：如果没有 Key，就弹出窗口
+  useEffect(() => {
+    if (!localStorage.getItem('user_openai_key')) {
+      setShowKeyModal(true);
+    }
+  }, []);
+
+  // 保存 Key 的功能
+  const handleSaveKey = (key) => {
+    localStorage.setItem('user_openai_key', key);
+    setHasKey(true);
+    setShowKeyModal(false);
+    triggerToast(); 
+  };
+  
+  // ====== OpenAI Key 逻辑结束 ======
 
   // --- Persistence ---
   useEffect(() => {
@@ -606,7 +696,7 @@ const App = () => {
     const updatePara = (updates) => setArticles(prev => prev.map(a => a.id === activeArticleId ? { ...a, paragraphs: a.paragraphs.map((p, i) => i === index ? { ...p, ...updates } : p) } : a));
     updatePara({ translating: true });
     try {
-      const translation = await callGemini(`Translate to Chinese (Simplified): "${text}"`, "", false);
+      const translation = await callOpenAI(`Translate to Chinese (Simplified): "${text}"`, "", false);
       updatePara({ cn: translation, translating: false });
     } catch (e) { updatePara({ translating: false }); }
   };
@@ -621,7 +711,7 @@ const App = () => {
     try {
       const fullText = activeArticle.paragraphs.map(p => p.en).join('\n');
       const prompt = `Analyze logic/viewpoints: ${fullText.substring(0, 8000)}... Output JSON: { "type": "fulltext", "core_viewpoint": "Chinese summary", "logic_flow": "Chinese logic breakdown" }`;
-      const resJson = cleanJson(await callGemini(prompt, "Expert tutor", true));
+      const resJson = cleanJson(await callOpenAI(prompt, "Expert tutor", true));
       if (resJson) setAnalysisResult({ ...resJson, original: "Full Text Analysis" });
     } catch (e) { setAnalysisResult({ type: 'error', content: "分析失败" }); } 
     finally { setLoadingAnalysis(false); }
@@ -680,7 +770,7 @@ const App = () => {
         2. Wrap the target word in **double asterisks** in all English examples.
         `;
       }
-      const resJson = cleanJson(await callGemini(prompt, "Expert English Teacher JSON", true));
+      const resJson = cleanJson(await callOpenAI(prompt, "Expert English Teacher JSON", true));
       if (resJson) {
         if (!resJson.type) resJson.type = targetType; 
         const newResult = { ...resJson, original: text };
@@ -695,7 +785,7 @@ const App = () => {
     setExpandedMeanings(prev => ({ ...prev, [index]: { loading: true, examples: [] } }));
     try {
       const prompt = `Generate 3 examples for "${selection.text}" meaning "${meaningLabel}". JSON: { "examples": [ { "en": "...", "cn": "..." }... ] } Wrap target in **stars**.`;
-      const res = cleanJson(await callGemini(prompt, "", true));
+      const res = cleanJson(await callOpenAI(prompt, "", true));
       if (res?.examples) setExpandedMeanings(prev => ({ ...prev, [index]: { loading: false, examples: res.examples } }));
     } catch (e) { setExpandedMeanings(prev => ({ ...prev, [index]: { loading: false, examples: [] } })); }
   };
@@ -775,7 +865,15 @@ const App = () => {
       <div className="flex-1 flex flex-col h-full relative" style={{ backgroundColor: COLORS.offWhite }}>
         <header className="h-16 border-b flex items-center px-4 shrink-0 justify-between" style={{ borderColor: `${COLORS.midnightGreen}20` }}>
           <div className="flex items-center gap-3">
-             <button onClick={() => setShowHistory(!showHistory)} className="p-2 hover:bg-black/5 rounded-lg" style={{ color: COLORS.midnightGreen }}><Menu size={20} /></button>
+             <button onClick={() => setShowHistory(!showHistory)} className="p-2 hover:bg-black/5 rounded-lg" style={{ color: COLORS.midnightGreen }}><Menu size={20} /></button>{/* 新增：API Key 设置按钮 */}
+             <button 
+               onClick={() => setShowKeyModal(true)} 
+               className={`p-2 hover:bg-black/5 rounded-lg ml-2 ${!hasKey ? 'animate-bounce text-red-500' : ''}`} 
+               style={{ color: hasKey ? COLORS.midnightGreen : '#E66414' }}
+               title="设置 OpenAI API Key"
+             >
+               <Bot size={20} />
+             </button>
              {activeArticle ? (
                <div className="flex items-center gap-3">
                  <h2 className="font-bold text-lg line-clamp-1 max-w-md font-sans" style={{ color: COLORS.midnightGreen, fontFamily: FONT_CN }}>{activeArticle.title}</h2>
@@ -858,6 +956,12 @@ const App = () => {
 
       <button onClick={() => setIsChatOpen(true)} className="fixed bottom-6 right-6 w-14 h-14 text-white rounded-full shadow-2xl flex items-center justify-center hover:scale-105 transition-all z-40" style={{ backgroundColor: COLORS.atomicTangerine }}><MessageSquare size={28} style={{ color: COLORS.offWhite }} /></button>
       <AIChatModal isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} contextArticle={articles.find(a => a.id === activeArticleId)?.paragraphs.map(p => p.en).join('\n')} />
+      {/* 新增：渲染 API Key 弹窗 */}
+      <ApiKeyModal 
+        isOpen={showKeyModal} 
+        onClose={() => setShowKeyModal(false)} 
+        onSave={handleSaveKey} 
+      />
     </div>
   );
 };
