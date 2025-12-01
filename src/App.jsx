@@ -733,34 +733,105 @@ const App = () => {
     setLoadingAnalysis(true); setAnalysisResult(null); setExpandedMeanings({}); 
     try {
       let prompt = "";
-      if (targetType === 'grammar') {
+      if (targetType === "grammar") {
         prompt = `
-      You are an English sentence analysis assistant for Chinese learners. 
-      Your job is to break down long, difficult English sentences in a way that is clear, intuitive, and easy to understand (no grammar jargon).
+      You MUST output in **strict JSON**, and all textual content inside the JSON MUST strictly follow the formatting rules below.
       
-      Analyze the sentence: "${text}"
-      Context: "${context}"
+      Analyze the English sentence:
       
-      Output JSON in this format (no extra text):
+      "${text}"
+      
+      Context:
+      "${context}"
+      
+      ===================================================
+      【GLOBAL RULES — VERY IMPORTANT】
+      ===================================================
+      1. 所有解释与结构说明必须用中文；原句英文碎片必须保留英文。  
+      2. 全部输出必须按三大部分生成：  
+         "main_structure", "internal_structure", "visual_structure"  
+      3. **必须使用 bullet point（•）**，且每个 bullet point 后必须换行。  
+      4. 内部可以有嵌套 bullet，但必须使用 4 个空格缩进（不是 tab）。  
+      5. 所有结构说明都不能使用学术语法术语，只能用功能性中文：  
+         如“补充说明”“结果”“动作对象”“用于解释原因”“用于说明对象”。  
+      6. 所有引用英文短语必须保持原样，不要修改顺序或补词。  
+      7. 结构图示必须严格以中文标签 + 英文片段输出，如：  
+         [主句] Corporate bonds also rallied  
+             [分词短语] shrinking  
+                 [宾语] the extra return  
+      8. 不得使用 {} 或 JSON 内部的额外反引号。
+      
+      ===================================================
+      【OUTPUT JSON SHAPE】
+      ===================================================
       {
         "type": "grammar",
-        "main_structure": "Chinese explanation of the core meaning. Identify the main clause. Use natural Chinese, not grammar terminology.",
-        "internal_structure": "Break the sentence into smaller parts using bullet points. For each part: show the English fragment + give a simple Chinese explanation of what it does (e.g., 表示结果, 补充说明, 描述动作对象). Avoid grammar jargon.",
-        "visual_structure": "Provide a tree-style hierarchical breakdown. Use only Chinese functional labels such as [主干], [补充], [说明], [结果], [动作对象]. Each level on a new line with indentation. Do not use grammar terms."
+        "main_structure": "这里放第 1 部分内容",
+        "internal_structure": "这里放第 2 部分内容",
+        "visual_structure": "这里放第 3 部分内容"
       }
       
-      Rules:
-      - 中文必须作为解释语言；英文只用于呈现句子片段。
-      - Avoid terms like: non-restrictive clause, participle clause, adverbial modifier, gerund, etc.
-      - Use intuitive functional descriptions: “表示结果”, “导致…”, “补充说明”, “进一步解释…”.
-      - The visual structure must clearly show indentation and layers like:
+      ===================================================
+      【DETAILED FORMAT SPECIFICATION】
+      ===================================================
       
-      [主干] ...
-          [补充] ...
-              [说明] ...
+      ---------------------------------------------------
+      【1. main_structure 主干结构】
+      ---------------------------------------------------
+      必须包含以下内容，且 **每项必须为 bullet point（•）单独一行**：
       
-      Do NOT use curly braces {} inside the JSON values. Bold key English terms.
-        `;
+      • 主句：<英文主句>  
+        → 主语 <中文解释>，谓语 <中文解释>。  
+        意思：<中文解释>  
+      
+      • 伴随结构（如分词短语 / 结果结构）：<英文短语>  
+        → 用中文解释该结构的功能，例如“表示结果”“补充说明”。  
+        意思：<中文翻译>  
+      
+      
+      ---------------------------------------------------
+      【2. internal_structure 内部结构】
+      ---------------------------------------------------
+      必须逐成分拆开句子，每一项都用 bullet point。  
+      如果一个成分内部还需要拆，则写成：
+      
+      • 第一层  
+          • 第二层  
+              • 第三层  
+      
+      示例格式（必须遵守）：
+      
+      • shrinking = <中文解释>  
+      • the extra return = <中文解释>  
+      • investors demand = <中文解释>  
+          • 完整形式为 the extra return (that) investors demand  
+          • 意思：<中文解释>  
+      • to hold companies’ bonds over riskfree Treasurys = <中文解释>  
+      • to its lowest level in decades = <中文解释>  
+      
+      
+      ---------------------------------------------------
+      【3. visual_structure 结构图示】
+      ---------------------------------------------------
+      必须完全按如下格式输出（严格树状缩进）：
+      
+      [主句] Corporate bonds also rallied  
+          [分词短语] shrinking  
+              [宾语] the extra return  
+                  [定语从句] (that) investors demand  
+                      [目的状语] to hold companies’ bonds over riskfree Treasurys  
+              [结果状语] to its lowest level in decades  
+      
+      规则：
+      - 方括号内必须是中文标签  
+      - 英文必须原样保留  
+      - 每一级缩进为 4 个空格  
+      - 严禁使用语法术语（如 non-restrictive clause, gerund 等）
+      
+      ===================================================
+      请严格根据以上规格输出 JSON。
+      ===================================================
+      `;
       } else {
         // UPDATED PROMPT: Simplified rewrite (under 30 words) and restricted common meanings. 
         // Changed instruction to prefer natural translation over dictionary definition.
