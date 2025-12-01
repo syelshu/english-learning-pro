@@ -734,15 +734,33 @@ const App = () => {
     try {
       let prompt = "";
       if (targetType === 'grammar') {
-        // FIXED PROMPT: Improved instruction to force correct format for visual_structure
-        prompt = `Analyze syntax: "${text}" Context: "${context}". 
-        Output JSON: { 
-          "type": "grammar", 
-          "main_structure": "用中文简述句子的核心意思（谁做了什么）。例如：**He** (他) **runs** (跑)。", 
-          "internal_structure": "用自然的大白话解释句子各个部分的作用和修饰关系。不要堆砌语法术语。例如：'opening the door' 是用来修饰主语的，表示伴随的动作。", 
-          "visual_structure": "使用缩进展示句子结构。标签使用简单的中文描述（如：[核心]、[修饰]、[补充]、[原因]等），不要用复杂的语法术语。\\n格式示例：\\n[核心] 主句内容...\\n    [修饰] 修饰语内容...\\n        [补充] 补充说明..." 
-        }
-        DO NOT use curly braces {} inside values. Bold key English terms.`;
+        prompt = `
+      You are an English sentence analysis assistant for Chinese learners. 
+      Your job is to break down long, difficult English sentences in a way that is clear, intuitive, and easy to understand (no grammar jargon).
+      
+      Analyze the sentence: "${text}"
+      Context: "${context}"
+      
+      Output JSON in this format (no extra text):
+      {
+        "type": "grammar",
+        "main_structure": "Chinese explanation of the core meaning. Identify the main clause. Use natural Chinese, not grammar terminology.",
+        "internal_structure": "Break the sentence into smaller parts using bullet points. For each part: show the English fragment + give a simple Chinese explanation of what it does (e.g., 表示结果, 补充说明, 描述动作对象). Avoid grammar jargon.",
+        "visual_structure": "Provide a tree-style hierarchical breakdown. Use only Chinese functional labels such as [主干], [补充], [说明], [结果], [动作对象]. Each level on a new line with indentation. Do not use grammar terms."
+      }
+      
+      Rules:
+      - 中文必须作为解释语言；英文只用于呈现句子片段。
+      - Avoid terms like: non-restrictive clause, participle clause, adverbial modifier, gerund, etc.
+      - Use intuitive functional descriptions: “表示结果”, “导致…”, “补充说明”, “进一步解释…”.
+      - The visual structure must clearly show indentation and layers like:
+      
+      [主干] ...
+          [补充] ...
+              [说明] ...
+      
+      Do NOT use curly braces {} inside the JSON values. Bold key English terms.
+        `;
       } else {
         // UPDATED PROMPT: Simplified rewrite (under 30 words) and restricted common meanings. 
         // Changed instruction to prefer natural translation over dictionary definition.
